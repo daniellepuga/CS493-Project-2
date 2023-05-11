@@ -1,0 +1,33 @@
+version: '3'
+services:
+  db:
+    image: mysql
+    environment:
+      MYSQL_DATABASE: 'mydb'
+      MYSQL_USER: 'myuser'
+      MYSQL_PASSWORD: 'mypassword'
+      MYSQL_RANDOM_ROOT_PASSWORD: 'myrandompassword'
+    ports:
+      - "3306:3306"
+    expose:
+      - "3306"
+    volumes:
+      - "./data/schema.sql:/docker-entrypoint-initdb.d/1.sql"
+    networks:
+      - mysql-net
+  api:
+    depends_on:
+      - db
+    build: .
+    environment:
+      MYSQL_HOST: 'db'
+      MYSQL_DB: 'mydb'
+      MYSQL_USER: 'myuser'
+      MYSQL_PASSWORD: 'mypassword'
+    ports:
+    - "8000:8000"
+    networks:
+      - mysql-net
+networks:
+  mysql-net:
+    driver: bridge

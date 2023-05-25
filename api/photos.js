@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { validateAgainstSchema, extractValidFields } = require('../lib/validation');
+const { requireAuthentication, authenticate } = require('../lib/authorization');
 
 // const photos = require('../data/photos');
 
@@ -59,11 +60,18 @@ async function deletePhotoById(photoid) {
   return result.affectedRows > 0;
 }
 
+async function getUserFromPhoto(photoid) {
+  const [result] = await db.query(
+    'SELECT userid FROM photos WHERE id = ?', [photoid]
+  )
+}
+
 /*
  * Route to create a new photo.
  */
-router.post('/', async function (req, res, next) {
+router.post('/', requireAuthentication, async function (req, res, next) {
   try {
+    if(authenticate(req.body.userid, req)){
     const id = await insertNewPhoto(req.body);
     const photo = extractValidFields(req.body, photoSchema);
 
@@ -74,7 +82,13 @@ router.post('/', async function (req, res, next) {
         business: `/businesses/${photo.businessid}`
       }
     })
-  } catch (err) {
+  } else {
+    res.status(403).json({
+      error: "Unable to add photo to database."
+    });
+    }
+  }
+  catch (err) {
     res.status(400).json({
       error: "Request body is not a valid photo object"
     });
@@ -107,12 +121,11 @@ router.put('/:photoID', async function (req, res, next) {
   const photoid = parseInt(req.params.photoID);
 
   if (validateAgainstSchema(req.body, photoSchema)) {
-    /*
-      * Make sure the updated photo has the same businessid and userid as
-      * the existing photo.
-      */
+    userid = await getUserFromPhoto(photoid);
+
     let updatedPhoto = extractValidFields(req.body, photoSchema);
     let existingPhoto = await getPhotoById(photoid);
+
     if (updatedPhoto.photoid === existingPhoto.photoid && updatedPhoto.userid === existingPhoto.userid) {
       try {
         updateStatus = await updatePhotoById(photoid, req.body);
@@ -133,26 +146,33 @@ router.put('/:photoID', async function (req, res, next) {
       res.status(403).json({
         error: "Updated photo cannot modify photoid or userid"
       });
-    }
+      }
   } else {
     res.status(400).json({
       error: "Request body is not a valid photo object"
     });
-  }
-});
+    }
+  });
 
 /*
  * Route to delete a photo.
  */
-router.delete('/:photoID', async function (req, res, next) {
+router.delete('/:photoID', requireAuthentication, async function (req, res, next) {
   const photoid = parseInt(req.params.photoID);
   try {
+    userid = await getUserFromPhoto(photoid);
+    if(authenticate(userid, req)) {
     deleteStatus = await deletePhotoById(photoid);
     if (deleteStatus) {
       res.status(204).end();
     } else {
       next();
     }
+  } else {
+    res.status(403).json({
+      error: "Cannot perform this action."
+    });
+  }
   } catch (err) {
     res.status(500).send({
       error: "Unable to delete photo."

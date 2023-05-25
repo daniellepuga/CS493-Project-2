@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { validateAgainstSchema, extractValidFields } = require('../lib/validation');
+const { requireAuthentication, authenticate } = require('../lib/authorization');
 
 // const businesses = require('../data/businesses');
 // const { reviews } = require('./reviews');
@@ -73,8 +74,7 @@ async function insertNewBusiness(business) {
   );
 
   const [result] = await db.query(
-    'INSERT INTO businesses SET ?',
-    validatedBusinesses
+    'INSERT INTO businesses SET ?', validatedBusinesses
   );
 
   return result.insertId;
@@ -82,8 +82,7 @@ async function insertNewBusiness(business) {
 
 async function getBusinessById(businessId) {
   const [results] = await db.query(
-    'SELECT * FROM businesses WHERE id = ?',
-    [businessId]
+    'SELECT * FROM businesses WHERE id = ?', [businessId]
   );
 
   return results[0];
@@ -96,8 +95,7 @@ async function updateBusinessById(businessId, business) {
   );
 
   const [result] = await db.query(
-    'UPDATE businesses SET ? WHERE id = ?',
-    [validatedBusinesses, businessId]
+    'UPDATE businesses SET ? WHERE id = ?', [validatedBusinesses, businessId]
   );
 
   return result.affectedRows > 0;
@@ -105,12 +103,16 @@ async function updateBusinessById(businessId, business) {
 
 async function deleteBusinessById(businessId) {
   const [result] = await db.query(
-    'DELETE FROM businesses WHERE id = ?',
-    [businessId]
+    'DELETE FROM businesses WHERE id = ?', [businessId]
   );
   return result.affectedRows > 0;
 }
 
+async function getOwnerFromBusiness(businessId) {
+  const [result] = await db.query(
+    'SELECT ownerId FROM business WHERE id = ?', [businessId])
+    return result[0].ownerid;
+}
 
 /*
  * Route to return a list of businesses.
@@ -177,6 +179,8 @@ router.get('/', async function (req, res) {
  */
 router.post('/', async function (req, res, next) {
   try {
+    if(authenticate(req.body.ownerid, req)) {
+    console.log(req.body);
     const id = await insertNewBusiness(req.body);
     res.status(201).json({
       id: id,
@@ -184,6 +188,11 @@ router.post('/', async function (req, res, next) {
         business: `/businesses/${id}`
       }
     });
+  } else {
+    res.status(403).json({
+      error:"Cannto add business into datatbase."
+    });
+    }
   } catch (err) {
     res.status(400).json({
       error: "Unable to insert business into db."
@@ -213,12 +222,14 @@ router.get('/:businessid', async function (req, res, next) {
 /*
  * Route to replace data for a business.
  */
-router.put('/:businessid', async function (req, res, next) {
+router.put('/:businessid', requireAuthentication, async function (req, res, next) {
   const businessid = parseInt(req.params.businessid);
 
   try {
-    const updateStatus = await updateBusinessById(businessid, req.body);
-    if (updateStatus) {
+    const updateStatus = await getOwnerFromBusiness(businessid);
+    if (authenticate(ownerid, req)) {
+      const updateStatus = await updateBusinessById(business, req.body);
+      if (updateStatus){
       res.status(200).json({
         links: {
           business: `/businesses/${businessid}`
@@ -226,6 +237,11 @@ router.put('/:businessid', async function (req, res, next) {
       })
     } else {
       next();
+    }
+    } else {
+      res.status(403).json({
+        error: "Cannot do this aciton."
+      })
     }
   } catch (err) {
     res.status(500).json({
@@ -237,15 +253,22 @@ router.put('/:businessid', async function (req, res, next) {
 /*
  * Route to delete a business.
  */
-router.delete('/:businessid', async function (req, res, next) {
+router.delete('/:businessid', requireAuthentication, async function (req, res, next) {
   const businessid = parseInt(req.params.businessid);
   try {
-    deleteStatus = await deleteBusinessById(businessid);
+    ownerid = await getOwnerFromBusiness(businessid);
+    if(authenticate(ownerid, req)) {
+      deleteStatus = await deleteBusinessById(businessid);
     if (deleteStatus) {
       res.status(204).end();
     } else {
       next();
     }
+  } else {
+    res.status(403).json({
+      error: "Cannot do this action."
+    });
+  }
   } catch (err) {
     res.status(500).send({
       error: "Unable to delete business."

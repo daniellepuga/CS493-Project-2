@@ -4,6 +4,7 @@ const { validateAgainstSchema, extractValidFields } = require('../lib/validation
 const reviews = require('../data/reviews');
 
 const db = require('../lib/mysqlPool');
+const { authenticate, requireAuthentication } = require('../lib/authorization');
 
 exports.router = router;
 exports.reviews = reviews;
@@ -18,7 +19,6 @@ const reviewSchema = {
   stars: { required: true },
   review: { required: false }
 };
-
 
 async function userAlreadyReviewed(userid, businessid) {
   const [results] = await db.query(
@@ -36,17 +36,13 @@ async function insertUserReview(review) {
   );
 
   const [results] = await db.query(
-    "INSERT INTO reviews SET ?",
-    validatedReview
-  );
+    "INSERT INTO reviews SET ?", validatedReview);
   return results.insertId;
 }
 
 async function getReviewById(reviewid) {
   const [results] = await db.query(
-    'SELECT * FROM reviews WHERE id = ?',
-    [reviewid]
-  );
+    'SELECT * FROM reviews WHERE id = ?',[reviewid]);
   return results[0];
 }
 
@@ -70,13 +66,21 @@ async function deleteReviewById(reviewid) {
   return result.affectedRows > 0;
 }
 
+async function getUserFromReview(reviewid){
+  const [result] = await db.query(
+    'SELECT userid FROM reviews WHERE id = ?',
+    [reviewid]
+  ) 
+  return results[0].userid;
+}
+
 /*
  * Route to create a new review.
  */
 router.post('/', async function (req, res, next) {
   try {
+    if (authenticate(req.body.userid, req)){ 
     const review = extractValidFields(req.body, reviewSchema);
-
     const userReviewed = await userAlreadyReviewed(review.userid, review.businessid);
 
     if (userReviewed) {
@@ -93,6 +97,7 @@ router.post('/', async function (req, res, next) {
         }
       });
     }
+  }
   } catch (err) {
     res.status(400).json({
       error: "Unable to insert review into db."
@@ -122,7 +127,7 @@ router.get('/:reviewID', async function (req, res, next) {
 /*
  * Route to update a review.
  */
-router.put('/:reviewID', async function (req, res, next) {
+router.put('/:reviewID', requireAuthentication, async function (req, res, next) {
   const reviewid = parseInt(req.params.reviewID);
 
   if (validateAgainstSchema(req.body, reviewSchema)) {
@@ -166,11 +171,18 @@ router.put('/:reviewID', async function (req, res, next) {
 router.delete('/:reviewID', async function (req, res, next) {
   const reviewid = parseInt(req.params.reviewID);
   try {
-    deleteStatus = await deleteReviewById(reviewid);
-    if (deleteStatus) {
-      res.status(204).end();
+    userId = await getUserFromReview(reviewid);
+    if (authenticate(userId, req)) {
+      deleteStatus = await deleteReviewById(reviewid);
+      if (deleteStatus) {
+        res.status(204).end();
+      } else {
+        next();
+      }
     } else {
-      next();
+      res.status(403).json({
+        error: "Unauthorized to perform this action."
+      });
     }
   } catch (err) {
     res.status(500).send({

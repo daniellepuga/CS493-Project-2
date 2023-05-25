@@ -12,7 +12,7 @@ CREATE TABLE `businesses` (
   `email` varchar(255) DEFAULT NULL,
   `ownerid` mediumint NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_ownerid` (`ownerid`)
+  -- KEY `idx_ownerid` (`ownerid`)
 );
 
 CREATE TABLE `reviews` (
@@ -35,4 +35,14 @@ CREATE TABLE `photos` (
   PRIMARY KEY (`id`),
   KEY `businessid` (`businessid`),
   CONSTRAINT `photos_ibfk_1` FOREIGN KEY (`businessid`) REFERENCES `businesses` (`id`)
+);
+
+CREATE TABLE `users` (
+  `id` mediumint NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `admin` tinyint(1) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
 );
